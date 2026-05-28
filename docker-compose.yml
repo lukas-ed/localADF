@@ -1,0 +1,89 @@
+# =====================================================================
+# docker-compose.yml  —  CAN forensics test-bed
+# =====================================================================
+# Runs every component from ONE shared image (built once), each as its own
+# service with a different command. This avoids a Dockerfile per component.
+#
+# CAN/vcan note:
+#   vcan interfaces are a KERNEL resource and are NOT per-container. The
+#   simplest, most reproducible approach is to create them on the HOST and
+#   let every container share the host network namespace (network_mode: host),
+#   so all containers see the same vcan0 / vcan1.
+#
+# PREREQUISITE (run on the host, once per boot, BEFORE `docker compose up`):
+#   ./setup_vcan.sh            # creates vcan0 (production) and vcan1 (forensic)
+#
+# Then:
+#   docker compose build
+#   docker compose up          # starts every component with one command
+#   docker compose down        # stops them
+#
+# To run only some services:
+#   docker compose up brake_ecu light_ecu mirror forensic
+#
+# Each service needs NET_ADMIN + host networking for SocketCAN to work.
+# =====================================================================
+
+x-can-common: &can-common
+  build:
+    context: ..
+    dockerfile: docker/Dockerfile
+  image: can-forensics:latest      # build once, reuse for every service
+  network_mode: host               # share the host's vcan0 / vcan1
+  cap_add:
+    - NET_ADMIN                     # required for SocketCAN inside the container
+  restart: "no"
+
+services:
+
+  # ---- Exterior Light ECU (start early so it doesn't miss frames) ----
+  light_ecu:
+    <<: *can-common
+    container_name: light_ecu
+    command: ["python", "exterior_light_ecu.py"]
+
+  # ---- Brake ECU ----
+  brake_ecu:
+    <<: *can-common
+    container_name: brake_ecu
+    command: ["python", "brake_ecu.py"]
+    depends_on:
+      - light_ecu
+
+  # ---- vcan0 -> vcan1 mirror (test harness; emulates the parallel tap) ----
+  mirror:
+    <<: *can-common
+    container_name: mirror
+    command: ["python", "mirror.py", "--src", "vcan0", "--dst", "vcan1"]
+    depends_on:
+      - brake_ecu
+      - light_ecu
+
+  # ---- Forensic component (read-only, observes vcan1) ----
+  forensic:
+    <<: *can-common
+    container_name: forensic
+    command: ["python", "forensic_component.py"]
+    depends_on:
+      - mirror
+
+  # ---- Brake-input stimulus (drives the normal flow) ----
+  # Started last; remove from `up` if you want to drive stimulus manually.
+  stimulus:
+    <<: *can-common
+    container_name: stimulus
+    command: ["python", "stimulus.py", "--pattern", "cycle", "--interval", "1.0"]
+    depends_on:
+      - brake_ecu
+      - light_ecu
+      - mirror
+      - forensic
+
+  # ---- Attacker node (DISABLED by default; enable for attack experiments) ----
+  # Uncomment and provide attacker.py to run spoof/replay scenarios.
+  # attacker:
+  #   <<: *can-common
+  #   container_name: attacker
+  #   command: ["python", "attacker.py", "--attack", "spoof"]
+  #   depends_on:
+  #     - mirror

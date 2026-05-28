@@ -1,0 +1,22 @@
+# =====================================================================
+# Rename this file to ".dockerignore" and place it at the PROJECT ROOT
+# (adf-testbed/adf-testbed/), NOT inside adf_docker/.
+# Docker reads .dockerignore relative to the build context (which is ..).
+# =====================================================================
+.venv/
+**/.venv/
+previouscode/
+**/__pycache__/
+*.pyc
+*.log
+*.jsonl
+.git/
+.gitignore
+.vscode/
+
+# the docker build files themselves don't need to be inside the image
+adf_docker/
+
+# old per-folder dockerfiles are superseded by the single shared image
+**/dockerfile
+**/Dockerfile

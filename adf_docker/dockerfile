@@ -1,0 +1,26 @@
+# =====================================================================
+# Single shared image for the whole ADF test-bed.
+# Build context = project root (adf-testbed/adf-testbed), so every
+# component folder AND cryptographic/ (holding secoc_lite.py) are copied
+# into the image. Each compose service runs a different folder's app.py.
+# =====================================================================
+FROM python:3.11-slim
+
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    iproute2 \
+    can-utils \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN pip install --no-cache-dir python-can cryptography psutil
+
+# Copy the whole project tree into /app. The .dockerignore at the build-
+# context root keeps .venv/, previouscode/, adf_docker/ etc. out.
+COPY . /app/
+
+# Make the shared MAC helper importable from any component:
+#   `import secoc_lite`  ->  resolves to cryptographic/secoc_lite.py
+ENV PYTHONPATH=/app:/app/cryptographic
+
+# No CMD: each service in docker-compose.yaml runs its own folder's app.py.

@@ -1,0 +1,17 @@
+# One image, reused by every component (DRY). The specific script to run is
+# chosen per-service in docker-compose.yml via `command`, not baked in here.
+FROM python:3.11-slim
+
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    iproute2 \
+    can-utils \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN pip install --no-cache-dir python-can cryptography psutil
+
+# Copy ALL component sources into the image. Each service runs a different one.
+COPY . /app/
+
+# No CMD: each service in docker-compose.yml specifies its own command.

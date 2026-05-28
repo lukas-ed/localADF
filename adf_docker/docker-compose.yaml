@@ -1,0 +1,89 @@
+# =====================================================================
+# docker-compose.yaml  —  ADF test-bed
+# =====================================================================
+# One shared image (built from the project root). Each service runs a
+# different component's app.py.
+#
+# Layout assumed (folder -> role):
+#   ecu_exteriorlight/app.py   exterior light ECU
+#   ecu_brake/app.py           brake ECU
+#   can_bus_sim/app.py         vcan0 -> vcan1 mirror (parallel tap)
+#   forensic_logger/app.py     passive forensic component (reads vcan1)
+#   sensor_brake_pedal/app.py  brake-input stimulus (drives the scenario)
+#   cryptographic/secoc_lite.py  shared MAC helper (on PYTHONPATH)
+#   benchmarktest/app.py       MAC overhead benchmark (run on demand)
+#
+# This file lives in adf_docker/ ; build context is the project root (..).
+#
+# PREREQUISITE (run on the HOST, once per boot):
+#   ./setup_vcan.sh            # creates vcan0 (production) + vcan1 (forensic)
+#
+# Run from inside adf_docker/:
+#   docker compose build
+#   docker compose up
+# =====================================================================
+
+x-can-common: &can-common
+  build:
+    context: ..                      # project root, so all folders are in the image
+    dockerfile: adf_docker/dockerfile
+  image: adf-testbed:latest          # build once, reuse for every service
+  network_mode: host                 # share host's vcan0 / vcan1
+  cap_add:
+    - NET_ADMIN                      # required for SocketCAN inside the container
+  restart: "no"
+
+services:
+
+  # ---- Exterior Light ECU (start first so it doesn't miss frames) ----
+  ecu_exteriorlight:
+    <<: *can-common
+    container_name: ecu_exteriorlight
+    command: ["python", "ecu_exteriorlight/app.py"]
+
+  # ---- Brake ECU ----
+  ecu_brake:
+    <<: *can-common
+    container_name: ecu_brake
+    command: ["python", "ecu_brake/app.py"]
+    depends_on: [ecu_exteriorlight]
+
+  # ---- CAN bus mirror: vcan0 -> vcan1 (parallel tap; test harness) ----
+  can_bus_sim:
+    <<: *can-common
+    container_name: can_bus_sim
+    command: ["python", "can_bus_sim/app.py"]
+    depends_on: [ecu_brake, ecu_exteriorlight]
+
+  # ---- Forensic component (read-only, observes vcan1) ----
+  forensic_logger:
+    <<: *can-common
+    container_name: forensic_logger
+    command: ["python", "forensic_logger/app.py"]
+    depends_on: [can_bus_sim]
+
+  # ---- Brake-input stimulus (drives the normal flow) ----
+  sensor_brake_pedal:
+    <<: *can-common
+    container_name: sensor_brake_pedal
+    command: ["python", "sensor_brake_pedal/app.py"]
+    depends_on: [ecu_brake, ecu_exteriorlight, can_bus_sim, forensic_logger]
+
+  # =====================================================================
+  # On-demand tools (not started by `docker compose up`; use `run`):
+  #   docker compose run --rm benchmarktest python benchmarktest/app.py
+  # Kept here for reference; the `profiles` key keeps it out of `up`.
+  # =====================================================================
+  benchmarktest:
+    <<: *can-common
+    container_name: benchmarktest
+    command: ["python", "benchmarktest/app.py"]
+    profiles: ["tools"]              # only runs when explicitly requested
+
+  # ---- Attacker / event injector (enable when ready) ----
+  # event_injector:
+  #   <<: *can-common
+  #   container_name: event_injector
+  #   command: ["python", "event_injector/app.py", "--attack", "spoof"]
+  #   depends_on: [can_bus_sim]
+  #   profiles: ["attack"]
