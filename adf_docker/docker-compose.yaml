@@ -81,9 +81,11 @@ services:
     profiles: ["tools"]              # only runs when explicitly requested
 
   # ---- Attacker / event injector (enable when ready) ----
-  # event_injector:
-  #   <<: *can-common
-  #   container_name: event_injector
-  #   command: ["python", "event_injector/app.py", "--attack", "spoof"]
-  #   depends_on: [can_bus_sim]
-  #   profiles: ["attack"]
+  event_injector:
+    <<: *can-common
+    container_name: event_injector
+    command: ["python", "event_injector/app.py", "--help"]
+    profiles: ["attack"]
+    depends_on:
+      - can_bus_sim
+      - forensic_logger
