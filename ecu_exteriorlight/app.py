@@ -31,7 +31,7 @@ FAULT_REPORT_ID          = 0x130
 # Configuration
 # =========================================================
 ECU_NAME = "Exterior Light ECU"
-CHANNEL = "vcan0"
+CHANNEL = "vcan1"
 INTERFACE = "socketcan"
 
 BRAKE_LIGHT_FORCE_THRESHOLD = 10

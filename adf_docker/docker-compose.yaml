@@ -49,25 +49,39 @@ services:
     depends_on: [ecu_exteriorlight]
 
   # ---- CAN bus mirror: vcan0 -> vcan1 (parallel tap; test harness) ----
-  can_bus_sim:
+#  can_bus_sim:
+#    <<: *can-common
+#    container_name: can_bus_sim
+#    command: ["python", "can_bus_sim/app.py"]
+#    depends_on: [ecu_brake, ecu_exteriorlight]
+
+# ---- Routed gateway: vcan0 chassis <-> vcan1 body ----
+  gateway:
     <<: *can-common
-    container_name: can_bus_sim
-    command: ["python", "can_bus_sim/app.py"]
+    container_name: gateway
+    command: ["python", "gateway/app.py"]
     depends_on: [ecu_brake, ecu_exteriorlight]
+    #environment: - PYTHONUNBUFFERED=1 - GW_CHASSIS=vcan0 - GW_BODY=vcan1 # Leave unset for faithful routing. # Enable one of these for gateway-tampering experiments: # - GW_DROP_IDS=0x110 # - GW_MODIFY_IDS=0x110 # - GW_ATTACK_AFTER=20
 
   # ---- Forensic component (read-only, observes vcan1) ----
   forensic_logger:
     <<: *can-common
     container_name: forensic_logger
     command: ["python", "forensic_logger/app.py"]
-    depends_on: [can_bus_sim]
-
+#    depends_on: [can_bus_sim]
+    depends_on: [gateway]
+    volumes:
+      - ../logs:/app/logs
+    environment:
+      - LOG_PATH=/app/logs/forensic_log.jsonl
   # ---- Brake-input stimulus (drives the normal flow) ----
   sensor_brake_pedal:
     <<: *can-common
     container_name: sensor_brake_pedal
     command: ["python", "sensor_brake_pedal/app.py"]
-    depends_on: [ecu_brake, ecu_exteriorlight, can_bus_sim, forensic_logger]
+#    depends_on: [ecu_brake, ecu_exteriorlight, can_bus_sim, forensic_logger]
+    depends_on: [ecu_brake, ecu_exteriorlight, gateway, forensic_logger]
+
 
   # =====================================================================
   # On-demand tools (not started by `docker compose up`; use `run`):
@@ -87,5 +101,6 @@ services:
     command: ["python", "event_injector/app.py", "--help"]
     profiles: ["attack"]
     depends_on:
-      - can_bus_sim
+#      - can_bus_sim
+      - gateway
       - forensic_logger
